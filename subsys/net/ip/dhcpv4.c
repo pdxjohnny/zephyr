@@ -111,7 +111,7 @@ enum dhcpv4_msg_type {
  * RFC2131 4.1.1
  */
 #define DHCPV4_INITIAL_DELAY_MIN 1
-#define DHCPV4_INITIAL_DELAY_MAX 10
+#define DHCPV4_INITIAL_DELAY_MAX 2
 
 /* RFC 1497 [17] */
 static const u8_t magic_cookie[4] = { 0x63, 0x82, 0x53, 0x63 };
@@ -679,7 +679,9 @@ static enum net_verdict parse_options(struct net_if *iface,
 
 	frag = net_frag_read(frag, offset, &pos, sizeof(magic_cookie),
 			     (u8_t *)cookie);
-	if (!frag || memcmp(magic_cookie, cookie, sizeof(magic_cookie))) {
+  NET_INFO("frag: %d", (!frag));
+  NET_INFO("memcmp: %d", (memcmp(magic_cookie, cookie, sizeof(magic_cookie)) != 0));
+	if (!frag || memcmp(magic_cookie, cookie, sizeof(magic_cookie)) != 0) {
 
 		NET_DBG("Incorrect magic cookie");
 		return NET_DROP;

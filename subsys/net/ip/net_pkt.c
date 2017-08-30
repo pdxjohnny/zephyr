@@ -1241,6 +1241,7 @@ struct net_buf *net_frag_read(struct net_buf *frag, u16_t offset,
 
 	frag = adjust_offset(frag, offset, pos);
 	if (!frag) {
+    printk("ERROR Failed to adjust_offest\n");
 		goto error;
 	}
 
@@ -1254,11 +1255,12 @@ struct net_buf *net_frag_read(struct net_buf *frag, u16_t offset,
 
 		/* Error: Still reamining length to be read, but no data. */
 		if (!frag && len) {
-			NET_ERR("Not enough data to read");
+			printk("ERROR Not enough data to read\n");
 			goto error;
 		}
 	}
 
+  printk("SUCCESS net_frag_read is chill\n");
 	return frag;
 
 error:
