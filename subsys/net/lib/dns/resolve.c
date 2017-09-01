@@ -92,14 +92,17 @@ int dns_resolve_init(struct dns_resolve_context *ctx, const char *servers[])
 	int ret, count;
 
 	if (!ctx) {
+    printk("\nMad about context\n\n");
 		return -ENOENT;
 	}
 
 	if (!servers || !*servers) {
+    printk("\nMad about servers\n\n");
 		return -ENOENT;
 	}
 
 	if (ctx->is_used) {
+    printk("\nMad about context being used\n\n");
 		return -ENOTEMPTY;
 	}
 

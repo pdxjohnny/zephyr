@@ -26,6 +26,7 @@
 #include <net/udp.h>
 #include "udp_internal.h"
 #include <net/dhcpv4.h>
+#include <net/dns_resolve.h>
 
 struct dhcp_msg {
 	u8_t op;		/* Message type, 1:BOOTREQUEST, 2:BOOTREPLY */
@@ -745,6 +746,45 @@ static enum net_verdict parse_options(struct net_if *iface,
 			net_if_ipv4_set_gw(iface, &router);
 			break;
 		}
+case DHCPV4_OPTIONS_DNS_SERVER: {
+const unsigned int max_ipv4_addr_len = 16;
+struct in_addr dns;
+char dns_string[max_ipv4_addr_len];
+const char *dns_servers[] = {dns_string, NULL};
+int is_used;
+
+/* DNS server option may present 1 or more
+* addresses. Each 4 bytes in length. DNS
+* servers should be listed in order
+* of preference.  Hence we choose the first
+* and skip the rest.
+*/
+if (length % 4 != 0 || length < 4) {
+NET_ERR("options_dns, bad length");
+return NET_DROP;
+}
+
+frag = net_frag_read(frag, pos, &pos, 4, dns.s4_addr);
+frag = net_frag_skip(frag, pos, &pos, length - 4);
+if (!frag && pos) {
+NET_ERR("options_dns, short packet");
+return NET_DROP;
+}
+
+memset(dns_string, 0, max_ipv4_addr_len);
+memcpy(dns_string, net_sprint_ipv4_addr(&dns),
+strlen(net_sprint_ipv4_addr(&dns)));
+
+NET_DBG("options_dns: %s", dns_servers[0]);
+
+is_used = dns_resolve_get_default()->is_used;
+if (dns_resolve_init(dns_resolve_get_default(), dns_servers) < 0) {
+NET_DBG("options_dns, failed to set resolve address");
+return NET_DROP;
+}
+dns_resolve_get_default()->is_used = is_used;
+break;
+		}
 		case DHCPV4_OPTIONS_LEASE_TIME:
 			if (length != 4) {
 				NET_ERR("options_lease_time, bad length");
@@ -833,10 +873,15 @@ static inline void handle_offer(struct net_if *iface)
 	switch (iface->dhcpv4.state) {
 	case NET_DHCPV4_DISABLED:
 	case NET_DHCPV4_INIT:
-	case NET_DHCPV4_REQUESTING:
 	case NET_DHCPV4_RENEWING:
 	case NET_DHCPV4_REBINDING:
 	case NET_DHCPV4_BOUND:
+		break;
+	case NET_DHCPV4_REQUESTING:
+		k_delayed_work_cancel(&iface->dhcpv4.timer);
+	  iface->dhcpv4.state = NET_DHCPV4_BOUND;
+    NET_DBG("enter state=%s",
+      net_dhcpv4_state_name(iface->dhcpv4.state));
 		break;
 	case NET_DHCPV4_SELECTING:
 		k_delayed_work_cancel(&iface->dhcpv4.timer);
@@ -902,9 +947,10 @@ static void handle_nak(struct net_if *iface)
 static void handle_dhcpv4_reply(struct net_if *iface,
 				enum dhcpv4_msg_type msg_type)
 {
-	NET_DBG("state=%s msg=%s",
+	NET_DBG("state=%s msg=%s msg=%d",
 		net_dhcpv4_state_name(iface->dhcpv4.state),
-		net_dhcpv4_msg_type_name(msg_type));
+		net_dhcpv4_msg_type_name(msg_type),
+    msg_type);
 
 	switch (msg_type) {
 	case DHCPV4_MSG_TYPE_OFFER:
