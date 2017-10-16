@@ -4,4 +4,4 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-obj-y += main.o
+obj-y += main.o x_dns.o
