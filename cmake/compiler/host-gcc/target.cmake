@@ -1,6 +1,6 @@
 # Configures CMake for using GCC
 
-find_program(CMAKE_C_COMPILER   gcc    )
+find_program(CMAKE_C_COMPILER   clang    )
 find_program(CMAKE_OBJCOPY      objcopy)
 find_program(CMAKE_OBJDUMP      objdump)
 #find_program(CMAKE_LINKER      ld     ) # Not in use yet
@@ -24,10 +24,10 @@ if(NOT CONFIG_X86_64)
 endif()
 
 if(CONFIG_CPLUSPLUS)
-  set(cplusplus_compiler g++)
+  set(cplusplus_compiler clang++)
 else()
-  if(EXISTS g++)
-    set(cplusplus_compiler g++)
+  if(EXISTS clang++)
+    set(cplusplus_compiler clang++)
   else()
     # When the toolchain doesn't support C++, and we aren't building
     # with C++ support just set it to something so CMake doesn't

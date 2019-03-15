@@ -1,5 +1,4 @@
 zephyr_compile_options(
-  -fno-freestanding
   -m32
   -MMD
   -MP

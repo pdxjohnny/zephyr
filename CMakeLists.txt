@@ -195,6 +195,8 @@ endif()
 # @Intent: Obtain compiler specific flags for standard C includes
 toolchain_cc_nostdinc()
 
+
+# -ffreestanding
 zephyr_compile_options(
   -g # TODO: build configuration enough?
   -Wall
@@ -202,7 +204,6 @@ zephyr_compile_options(
   -Wformat-security
   -Wno-format-zero-length
   -imacros ${AUTOCONF_H}
-  -ffreestanding
   -Wno-main
   -fno-common
   ${TOOLCHAIN_C_FLAGS}
@@ -1274,7 +1275,7 @@ endif()
 
 # FIXME: Is there any way to get rid of empty_file.c?
 add_executable(       ${ZEPHYR_PREBUILT_EXECUTABLE} misc/empty_file.c)
-target_link_libraries(${ZEPHYR_PREBUILT_EXECUTABLE} ${TOPT} ${PROJECT_BINARY_DIR}/linker.cmd ${PRIV_STACK_LIB} ${zephyr_lnk} ${CODE_RELOCATION_DEP})
+target_link_libraries(${ZEPHYR_PREBUILT_EXECUTABLE} --for-linker ${TOPT} ${PROJECT_BINARY_DIR}/linker.cmd ${PRIV_STACK_LIB} ${zephyr_lnk} ${CODE_RELOCATION_DEP})
 set_property(TARGET   ${ZEPHYR_PREBUILT_EXECUTABLE} PROPERTY LINK_DEPENDS ${PROJECT_BINARY_DIR}/linker.cmd)
 add_dependencies(     ${ZEPHYR_PREBUILT_EXECUTABLE} ${ALIGN_SIZING_DEP} ${PRIV_STACK_DEP} ${LINKER_SCRIPT_TARGET} ${OFFSETS_LIB})
 
