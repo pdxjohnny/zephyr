@@ -140,6 +140,24 @@ static const unsigned char ack[382] = {
 0x56, 0x8f, 0xb6, 0xfa, 0x69, 0xff
 };
 
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+
+#include <stdlib.h>
+#include <unistd.h>
+
+#define FUZZING_MAX_PACKET_SIZE UINT16_MAX
+typedef enum {
+	FUZZING_OFFER,
+	FUZZING_ACK
+} fuzzing_packet_t;
+static fuzzing_packet_t fuzzing_packet;
+static unsigned char fuzzing_offer[FUZZING_MAX_PACKET_SIZE];
+static size_t fuzzing_offer_length;
+static unsigned char fuzzing_ack[FUZZING_MAX_PACKET_SIZE];
+static size_t fuzzing_ack_length;
+
+#endif /* FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION */
+
 static const struct in_addr server_addr = { { { 192, 0, 2, 1 } } };
 static const struct in_addr client_addr = { { { 255, 255, 255, 255 } } };
 
@@ -199,8 +217,17 @@ static void net_dhcpv4_iface_init(struct net_if *iface)
 struct net_pkt *prepare_dhcp_offer(struct net_if *iface, u32_t xid)
 {
 	struct net_pkt *pkt;
+	const unsigned char *offer_ptr = offer;
+	size_t offer_length = sizeof(offer);
 
-	pkt = net_pkt_alloc_with_buffer(iface, sizeof(offer), AF_INET,
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+	if (fuzzing_packet == FUZZING_OFFER) {
+		offer_ptr = fuzzing_offer;
+		offer_length = fuzzing_offer_length;
+	}
+#endif /* FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION */
+
+	pkt = net_pkt_alloc_with_buffer(iface, offer_length, AF_INET,
 					IPPROTO_UDP, K_FOREVER);
 	if (!pkt) {
 		return NULL;
@@ -213,7 +240,7 @@ struct net_pkt *prepare_dhcp_offer(struct net_if *iface, u32_t xid)
 		goto fail;
 	}
 
-	if (net_pkt_write(pkt, offer, 4)) {
+	if (net_pkt_write(pkt, offer_ptr, 4)) {
 		goto fail;
 	}
 
@@ -222,7 +249,7 @@ struct net_pkt *prepare_dhcp_offer(struct net_if *iface, u32_t xid)
 		goto fail;
 	}
 
-	if (net_pkt_write(pkt, offer + 8, sizeof(offer) - 8)) {
+	if (net_pkt_write(pkt, offer_ptr + 8, offer_length - 8)) {
 		goto fail;
 	}
 
@@ -240,8 +267,17 @@ fail:
 struct net_pkt *prepare_dhcp_ack(struct net_if *iface, u32_t xid)
 {
 	struct net_pkt *pkt;
+	const unsigned char *ack_ptr = ack;
+	size_t ack_length = sizeof(ack);
 
-	pkt = net_pkt_alloc_with_buffer(iface, sizeof(offer), AF_INET,
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+	if (fuzzing_packet == FUZZING_ACK) {
+		ack_ptr = fuzzing_ack;
+		ack_length = fuzzing_ack_length;
+	}
+#endif /* FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION */
+
+	pkt = net_pkt_alloc_with_buffer(iface, ack_length, AF_INET,
 					IPPROTO_UDP, K_FOREVER);
 	if (!pkt) {
 		return NULL;
@@ -254,7 +290,7 @@ struct net_pkt *prepare_dhcp_ack(struct net_if *iface, u32_t xid)
 		goto fail;
 	}
 
-	if (net_pkt_write(pkt, ack, 4)) {
+	if (net_pkt_write(pkt, ack_ptr, 4)) {
 		goto fail;
 	}
 
@@ -263,7 +299,7 @@ struct net_pkt *prepare_dhcp_ack(struct net_if *iface, u32_t xid)
 		goto fail;
 	}
 
-	if (net_pkt_write(pkt, ack + 8, sizeof(ack) - 8)) {
+	if (net_pkt_write(pkt, ack_ptr + 8, ack_length - 8)) {
 		goto fail;
 	}
 
@@ -390,12 +426,17 @@ static struct net_mgmt_event_callback rx_cb;
 static void receiver_cb(struct net_mgmt_event_callback *cb,
 			u32_t nm_event, struct net_if *iface)
 {
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    // Speed up fuzzing, fuzzing will result in events other than expected
+	k_sem_give(&test_lock);
+#else
 	if (nm_event != NET_EVENT_IPV4_ADDR_ADD) {
 		/* Spurious callback. */
 		return;
 	}
 
 	k_sem_give(&test_lock);
+#endif /* FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION */
 }
 
 void test_dhcp(void)
@@ -421,9 +462,83 @@ void test_dhcp(void)
 	}
 }
 
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+static ssize_t read_until_eof(int fd,
+			char *const buffer, const size_t max_length) {
+	ssize_t bytes_read = -1;
+	size_t total_bytes_read = 0U;
+
+	while (bytes_read != 0) {
+		bytes_read = read(fd, &(buffer[total_bytes_read]),
+				max_length - total_bytes_read);
+		if (bytes_read < 0) {
+			return -1;
+		} else {
+			total_bytes_read += (size_t)bytes_read;
+			// Check for overflow
+			if (0 > (ssize_t)total_bytes_read) {
+				return -1;
+			}
+		}
+	}
+
+	return (ssize_t)total_bytes_read;
+}
+
+static int fuzzing_init() {
+	const char *const FUZZING_MODE = getenv("FUZZING_MODE");
+
+    dprintf(STDERR_FILENO, "FUZZING_MODE: %s\n", FUZZING_MODE);
+
+	// Set packet to based off of environment variable
+	if (FUZZING_MODE == NULL) {
+		return -1;
+	}
+
+	if (0 == strcmp("offer", FUZZING_MODE)) {
+		fuzzing_packet = FUZZING_OFFER;
+	} else if (0 == strcmp("ack", FUZZING_MODE)) {
+		fuzzing_packet = FUZZING_ACK;
+	} else {
+		return -1;
+	}
+
+	switch (fuzzing_packet) {
+		case FUZZING_OFFER:
+			fuzzing_offer_length = read_until_eof(STDIN_FILENO, fuzzing_offer,
+					sizeof(fuzzing_offer));
+            dprintf(STDERR_FILENO, "fuzzing_offer_length: %d\n", fuzzing_offer_length);
+			if (fuzzing_offer_length < 1) {
+				return -1;
+			}
+			break;
+		case FUZZING_ACK:
+			fuzzing_ack_length = read_until_eof(STDIN_FILENO, fuzzing_ack,
+					sizeof(fuzzing_ack));
+            dprintf(STDERR_FILENO, "fuzzing_ack_length: %d\n", fuzzing_ack_length);
+			if (fuzzing_ack_length < 1) {
+				return -1;
+			}
+			break;
+		default:
+			return -1;
+	}
+
+	return 0;
+}
+
+#endif /* FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION */
+
 /**test case main entry */
 void test_main(void)
 {
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+	if (fuzzing_init() == -1) {
+		perror("fuzzing_init failure");
+		exit(1);
+	}
+#endif /* FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION */
+
 	ztest_test_suite(test_dhcpv4,
 			ztest_unit_test(test_dhcp));
 	ztest_run_test_suite(test_dhcpv4);

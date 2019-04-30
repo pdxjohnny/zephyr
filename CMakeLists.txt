@@ -198,6 +198,7 @@ endif()
 toolchain_cc_nostdinc()
 
 zephyr_compile_options(
+  -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION=1
   -g # TODO: build configuration enough?
   -Wall
   -Wformat
